@@ -322,6 +322,9 @@ type Work = {
   _didCommit: boolean,
 };
 
+/**
+ * 构造函数：创建一个 work，功能类似 promise，区别是回调是同步调用而非 microtask
+ */
 function ReactWork() {
   this._callbacks = null;
   this._didCommit = false;
@@ -362,11 +365,15 @@ ReactWork.prototype._onCommit = function(): void {
   }
 };
 
+/**
+ * 构造函数：创建 ReactRoot 对象
+ */
 function ReactRoot(
   container: DOMContainer,
   isConcurrent: boolean,
   hydrate: boolean,
 ) {
+  // 创建 FiberRoot 对象，并挂载在 ReactRoot 对象的 _internalRoot 属性上
   const root = createContainer(container, isConcurrent, hydrate);
   this._internalRoot = root;
 }
@@ -374,15 +381,15 @@ ReactRoot.prototype.render = function(
   children: ReactNodeList,
   callback: ?() => mixed,
 ): Work {
+  // root 是 FiberRoot 对象
   const root = this._internalRoot;
   const work = new ReactWork();
   callback = callback === undefined ? null : callback;
-  if (__DEV__) {
-    warnOnInvalidCallback(callback, 'render');
-  }
   if (callback !== null) {
+    // 向 work 中注入回调
     work.then(callback);
   }
+  // 至此初始化创建阶段结束，开始进入更新阶段
   updateContainer(children, root, null, work._onCommit);
   return work;
 };
@@ -490,50 +497,24 @@ setBatchingImplementation(
   flushInteractiveUpdates,
 );
 
-let warnedAboutHydrateAPI = false;
-
 function legacyCreateRootFromDOMContainer(
   container: DOMContainer,
   forceHydrate: boolean,
 ): Root {
+  // 是否需要 hydrate，客户端渲染不需要
   const shouldHydrate =
     forceHydrate || shouldHydrateDueToLegacyHeuristic(container);
-  // First clear any existing content.
+  // 首先，清空容器内部已存在的内容
   if (!shouldHydrate) {
     let warned = false;
     let rootSibling;
     while ((rootSibling = container.lastChild)) {
-      if (__DEV__) {
-        if (
-          !warned &&
-          rootSibling.nodeType === ELEMENT_NODE &&
-          (rootSibling: any).hasAttribute(ROOT_ATTRIBUTE_NAME)
-        ) {
-          warned = true;
-          warningWithoutStack(
-            false,
-            'render(): Target node has markup rendered by React, but there ' +
-              'are unrelated nodes as well. This is most commonly caused by ' +
-              'white-space inserted around server-rendered markup.',
-          );
-        }
-      }
       container.removeChild(rootSibling);
     }
   }
-  if (__DEV__) {
-    if (shouldHydrate && !forceHydrate && !warnedAboutHydrateAPI) {
-      warnedAboutHydrateAPI = true;
-      lowPriorityWarning(
-        false,
-        'render(): Calling ReactDOM.render() to hydrate server-rendered markup ' +
-          'will stop working in React v17. Replace the ReactDOM.render() call ' +
-          'with ReactDOM.hydrate() if you want React to attach to the server HTML.',
-      );
-    }
-  }
-  // Legacy roots are not async by default.
+  // 是否异步，ReactRoot 的创建过程应该是同步的
   const isConcurrent = false;
+  // 创建 ReactRoot 对象
   return new ReactRoot(container, isConcurrent, shouldHydrate);
 }
 
@@ -544,15 +525,11 @@ function legacyRenderSubtreeIntoContainer(
   forceHydrate: boolean,
   callback: ?Function,
 ) {
-  if (__DEV__) {
-    topLevelUpdateWarnings(container);
-  }
-
-  // TODO: Without `any` type, Flow says "Property cannot be accessed on any
-  // member of intersection type." Whyyyyyy.
+  // 读取容器（dom）的 _reactRootContainer 属性，如果有值，则为 ReactRoot 对象
   let root: Root = (container._reactRootContainer: any);
+  // 客户端渲染初始挂载肯定无值
   if (!root) {
-    // Initial mount
+    // 在容器（dom）上初始化 ReactRoot 对象
     root = container._reactRootContainer = legacyCreateRootFromDOMContainer(
       container,
       forceHydrate,
@@ -564,7 +541,7 @@ function legacyRenderSubtreeIntoContainer(
         originalCallback.call(instance);
       };
     }
-    // Initial mount should not be batched.
+    // 初始化挂载不应该是批次更新
     unbatchedUpdates(() => {
       if (parentComponent != null) {
         root.legacy_renderSubtreeIntoContainer(
@@ -573,6 +550,7 @@ function legacyRenderSubtreeIntoContainer(
           callback,
         );
       } else {
+        // 执行当前 ReactRoot 的 render 方法
         root.render(children, callback);
       }
     });
@@ -675,19 +653,7 @@ const ReactDOM: Object = {
     container: DOMContainer,
     callback: ?Function,
   ) {
-    invariant(
-      isValidContainer(container),
-      'Target container is not a DOM element.',
-    );
-    if (__DEV__) {
-      warningWithoutStack(
-        !container._reactHasBeenPassedToCreateRootDEV,
-        'You are calling ReactDOM.render() on a container that was previously ' +
-          'passed to ReactDOM.%s(). This is not supported. ' +
-          'Did you mean to call root.render(element)?',
-        enableStableConcurrentModeAPIs ? 'createRoot' : 'unstable_createRoot',
-      );
-    }
+    // 开始进入初始化创建阶段：此阶段会初始化 FiberRoot 和 RootFiber 对象，并挂载到容器（dom）上
     return legacyRenderSubtreeIntoContainer(
       null,
       element,
@@ -772,9 +738,9 @@ const ReactDOM: Object = {
             'was rendered by React and is not a top-level container. %s',
           isContainerReactRoot
             ? 'You may have accidentally passed in a React root node instead ' +
-              'of its container.'
+                'of its container.'
             : 'Instead, have the parent component update its state and ' +
-              'rerender in order to remove this component.',
+                'rerender in order to remove this component.',
         );
       }
 

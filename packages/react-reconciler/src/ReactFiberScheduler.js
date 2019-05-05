@@ -183,74 +183,8 @@ export type Thenable = {
 
 const {ReactCurrentDispatcher, ReactCurrentOwner} = ReactSharedInternals;
 
-let didWarnAboutStateTransition;
-let didWarnSetStateChildContext;
 let warnAboutUpdateOnUnmounted;
 let warnAboutInvalidUpdates;
-
-if (enableSchedulerTracing) {
-  // Provide explicit error message when production+profiling bundle of e.g. react-dom
-  // is used with production (non-profiling) bundle of scheduler/tracing
-  invariant(
-    __interactionsRef != null && __interactionsRef.current != null,
-    'It is not supported to run the profiling version of a renderer (for example, `react-dom/profiling`) ' +
-      'without also replacing the `scheduler/tracing` module with `scheduler/tracing-profiling`. ' +
-      'Your bundler might have a setting for aliasing both modules. ' +
-      'Learn more at http://fb.me/react-profiling',
-  );
-}
-
-if (__DEV__) {
-  didWarnAboutStateTransition = false;
-  didWarnSetStateChildContext = false;
-  const didWarnStateUpdateForUnmountedComponent = {};
-
-  warnAboutUpdateOnUnmounted = function(fiber: Fiber, isClass: boolean) {
-    // We show the whole stack but dedupe on the top component's name because
-    // the problematic code almost always lies inside that component.
-    const componentName = getComponentName(fiber.type) || 'ReactComponent';
-    if (didWarnStateUpdateForUnmountedComponent[componentName]) {
-      return;
-    }
-    warningWithoutStack(
-      false,
-      "Can't perform a React state update on an unmounted component. This " +
-        'is a no-op, but it indicates a memory leak in your application. To ' +
-        'fix, cancel all subscriptions and asynchronous tasks in %s.%s',
-      isClass
-        ? 'the componentWillUnmount method'
-        : 'a useEffect cleanup function',
-      getStackByFiberInDevAndProd(fiber),
-    );
-    didWarnStateUpdateForUnmountedComponent[componentName] = true;
-  };
-
-  warnAboutInvalidUpdates = function(instance: React$Component<any>) {
-    switch (ReactCurrentFiberPhase) {
-      case 'getChildContext':
-        if (didWarnSetStateChildContext) {
-          return;
-        }
-        warningWithoutStack(
-          false,
-          'setState(...): Cannot call setState() inside getChildContext()',
-        );
-        didWarnSetStateChildContext = true;
-        break;
-      case 'render':
-        if (didWarnAboutStateTransition) {
-          return;
-        }
-        warningWithoutStack(
-          false,
-          'Cannot update during an existing state transition (such as within ' +
-            '`render`). Render methods should be a pure function of props and state.',
-        );
-        didWarnAboutStateTransition = true;
-        break;
-    }
-  };
-}
 
 // Used to ensure computeUniqueAsyncExpiration is monotonically decreasing.
 let lastUniqueAsyncExpiration: number = Sync - 1;
@@ -282,96 +216,7 @@ let stashedWorkInProgressProperties;
 let replayUnitOfWork;
 let mayReplayFailedUnitOfWork;
 let isReplayingFailedUnitOfWork;
-let originalReplayError;
 let rethrowOriginalError;
-if (__DEV__ && replayFailedUnitOfWorkWithInvokeGuardedCallback) {
-  stashedWorkInProgressProperties = null;
-  mayReplayFailedUnitOfWork = true;
-  isReplayingFailedUnitOfWork = false;
-  originalReplayError = null;
-  replayUnitOfWork = (
-    failedUnitOfWork: Fiber,
-    thrownValue: mixed,
-    isYieldy: boolean,
-  ) => {
-    if (
-      thrownValue !== null &&
-      typeof thrownValue === 'object' &&
-      typeof thrownValue.then === 'function'
-    ) {
-      // Don't replay promises. Treat everything else like an error.
-      // TODO: Need to figure out a different strategy if/when we add
-      // support for catching other types.
-      return;
-    }
-
-    // Restore the original state of the work-in-progress
-    if (stashedWorkInProgressProperties === null) {
-      // This should never happen. Don't throw because this code is DEV-only.
-      warningWithoutStack(
-        false,
-        'Could not replay rendering after an error. This is likely a bug in React. ' +
-          'Please file an issue.',
-      );
-      return;
-    }
-    assignFiberPropertiesInDEV(
-      failedUnitOfWork,
-      stashedWorkInProgressProperties,
-    );
-
-    switch (failedUnitOfWork.tag) {
-      case HostRoot:
-        popHostContainer(failedUnitOfWork);
-        popTopLevelLegacyContextObject(failedUnitOfWork);
-        break;
-      case HostComponent:
-        popHostContext(failedUnitOfWork);
-        break;
-      case ClassComponent: {
-        const Component = failedUnitOfWork.type;
-        if (isLegacyContextProvider(Component)) {
-          popLegacyContext(failedUnitOfWork);
-        }
-        break;
-      }
-      case HostPortal:
-        popHostContainer(failedUnitOfWork);
-        break;
-      case ContextProvider:
-        popProvider(failedUnitOfWork);
-        break;
-    }
-    // Replay the begin phase.
-    isReplayingFailedUnitOfWork = true;
-    originalReplayError = thrownValue;
-    invokeGuardedCallback(null, workLoop, null, isYieldy);
-    isReplayingFailedUnitOfWork = false;
-    originalReplayError = null;
-    if (hasCaughtError()) {
-      const replayError = clearCaughtError();
-      if (replayError != null && thrownValue != null) {
-        try {
-          // Reading the expando property is intentionally
-          // inside `try` because it might be a getter or Proxy.
-          if (replayError._suppressLogging) {
-            // Also suppress logging for the original error.
-            (thrownValue: any)._suppressLogging = true;
-          }
-        } catch (inner) {
-          // Ignore.
-        }
-      }
-    } else {
-      // If the begin phase did not fail the second time, set this pointer
-      // back to the original value.
-      nextUnitOfWork = failedUnitOfWork;
-    }
-  };
-  rethrowOriginalError = () => {
-    throw originalReplayError;
-  };
-}
 
 function resetStack() {
   if (nextUnitOfWork !== null) {
@@ -380,11 +225,6 @@ function resetStack() {
       unwindInterruptedWork(interruptedWork);
       interruptedWork = interruptedWork.return;
     }
-  }
-
-  if (__DEV__) {
-    ReactStrictModeWarnings.discardPendingWarnings();
-    checkThatStackIsEmpty();
   }
 
   nextRoot = null;
@@ -396,9 +236,6 @@ function resetStack() {
 
 function commitAllHostEffects() {
   while (nextEffect !== null) {
-    if (__DEV__) {
-      setCurrentFiber(nextEffect);
-    }
     recordEffect();
 
     const effectTag = nextEffect.effectTag;
@@ -1597,7 +1434,7 @@ function computeExpirationForFiber(currentTime: ExpirationTime, fiber: Fiber) {
 
   let expirationTime;
   if ((fiber.mode & ConcurrentMode) === NoContext) {
-    // Outside of concurrent mode, updates are always synchronous.
+    // 除了批量更新模式，更新总是同步的
     expirationTime = Sync;
   } else if (isWorking && !isCommitting) {
     // During render phase, updates expire during as the current render.
@@ -2038,37 +1875,17 @@ function onCommit(root, expirationTime) {
 }
 
 function requestCurrentTime() {
-  // requestCurrentTime is called by the scheduler to compute an expiration
-  // time.
-  //
-  // Expiration times are computed by adding to the current time (the start
-  // time). However, if two updates are scheduled within the same event, we
-  // should treat their start times as simultaneous, even if the actual clock
-  // time has advanced between the first and second call.
-
-  // In other words, because expiration times determine how updates are batched,
-  // we want all updates of like priority that occur within the same event to
-  // receive the same expiration time. Otherwise we get tearing.
-  //
-  // We keep track of two separate times: the current "renderer" time and the
-  // current "scheduler" time. The renderer time can be updated whenever; it
-  // only exists to minimize the calls performance.now.
-  //
-  // But the scheduler time can only be updated if there's no pending work, or
-  // if we know for certain that we're not in the middle of an event.
-
+  // 当前处于【渲染阶段】，返回当前调度系统的时间，初始化时为当前时间（批量处理过的）
   if (isRendering) {
-    // We're already rendering. Return the most recently read time.
     return currentSchedulerTime;
   }
-  // Check if there's pending work.
+  // 找出优先级最高的 FiberRoot，更新 FiberRoots 链表，？？？？？？
   findHighestPriorityRoot();
   if (
     nextFlushedExpirationTime === NoWork ||
     nextFlushedExpirationTime === Never
   ) {
-    // If there's no pending work, or if the pending work is offscreen, we can
-    // read the current time without risk of tearing.
+    // 如果没有未完成的任务，或者待处理的任务是在屏幕外，直接使用当前渲染时间作为调度时间
     recomputeCurrentRendererTime();
     currentSchedulerTime = currentRendererTime;
     return currentSchedulerTime;
@@ -2149,11 +1966,6 @@ function findHighestPriorityRoot() {
         // TODO: This check is redudant, but Flow is confused by the branch
         // below where we set lastScheduledRoot to null, even though we break
         // from the loop right after.
-        invariant(
-          previousScheduledRoot !== null && lastScheduledRoot !== null,
-          'Should have a previous and last root. This error is likely ' +
-            'caused by a bug in React. Please file an issue.',
-        );
         if (root === root.nextScheduledRoot) {
           // This is the only root in the list.
           root.nextScheduledRoot = null;

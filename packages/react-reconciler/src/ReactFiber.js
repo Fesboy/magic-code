@@ -216,20 +216,23 @@ if (__DEV__) {
   debugCounter = 1;
 }
 
+/**
+ * 构造函数：创建 Fiber 对象
+ */
 function FiberNode(
   tag: WorkTag,
   pendingProps: mixed,
   key: null | string,
   mode: TypeOfMode,
 ) {
-  // Instance
+  // 实例相关属性
   this.tag = tag;
   this.key = key;
   this.elementType = null;
   this.type = null;
   this.stateNode = null;
 
-  // Fiber
+  // Fiber 相关属性
   this.return = null;
   this.child = null;
   this.sibling = null;
@@ -245,7 +248,7 @@ function FiberNode(
 
   this.mode = mode;
 
-  // Effects
+  // 副作用相关属性
   this.effectTag = NoEffect;
   this.nextEffect = null;
 
@@ -283,17 +286,6 @@ function FiberNode(
     this.selfBaseDuration = 0;
     this.treeBaseDuration = 0;
   }
-
-  if (__DEV__) {
-    this._debugID = debugCounter++;
-    this._debugSource = null;
-    this._debugOwner = null;
-    this._debugIsCurrentlyTiming = false;
-    this._debugHookTypes = null;
-    if (!hasBadMapPolyfill && typeof Object.preventExtensions === 'function') {
-      Object.preventExtensions(this);
-    }
-  }
 }
 
 // This is a constructor function, rather than a POJO constructor, still
@@ -315,7 +307,7 @@ const createFiber = function(
   key: null | string,
   mode: TypeOfMode,
 ): Fiber {
-  // $FlowFixMe: the shapes are exact here but Flow doesn't like constructors
+  // 创建 Fiber 对象
   return new FiberNode(tag, pendingProps, key, mode);
 };
 
@@ -424,16 +416,12 @@ export function createWorkInProgress(
   return workInProgress;
 }
 
+/**
+ * 创建 RootFiber
+ */
 export function createHostRootFiber(isConcurrent: boolean): Fiber {
   let mode = isConcurrent ? ConcurrentMode | StrictMode : NoContext;
-
-  if (enableProfilerTimer && isDevToolsPresent) {
-    // Always collect profile timings when DevTools are present.
-    // This enables DevTools to start capturing timing at any point–
-    // Without some nodes in the tree having empty base times.
-    mode |= ProfileMode;
-  }
-
+  // 创建一个 Fiber 对象，指定 tag => 3、mode => 4，说明该 Fiber 对象为 RootFiber
   return createFiber(HostRoot, null, null, mode);
 }
 

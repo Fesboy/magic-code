@@ -92,19 +92,26 @@ if (__DEV__) {
   didWarnAboutFindNodeInStrictMode = {};
 }
 
+/**
+ * 根据父组件获取子树的 context 对象
+ */
 function getContextForSubtree(
   parentComponent: ?React$Component<any, any>,
 ): Object {
+  // 父组件不存在，返回空对象
   if (!parentComponent) {
     return emptyContextObject;
   }
-
+  // 获取父组件对应的 Fiber 对象
   const fiber = getInstance(parentComponent);
+  // 根据传入父组件的 Fiber 对象，获取子树的 context 对象（来源于父组件的祖先组件）
   const parentContext = findCurrentUnmaskedContext(fiber);
-
+  // 如果父组件是 classComponent
   if (fiber.tag === ClassComponent) {
     const Component = fiber.type;
+    // 判断父组件是否定义了 childContextTypes，如果定义了，说明父组件也可能存在自定义的 context 内容
     if (isLegacyContextProvider(Component)) {
+      // 如果父组件存在自定义的 context 内容，需要将父组件的 context 对象（来源于父组件的祖先组件）和其自定义的 context 对象合并
       return processChildContext(fiber, Component, parentContext);
     }
   }
@@ -112,30 +119,16 @@ function getContextForSubtree(
   return parentContext;
 }
 
+/**
+ * 调度 RootFiber 的更新
+ */
 function scheduleRootUpdate(
   current: Fiber,
   element: ReactNodeList,
   expirationTime: ExpirationTime,
   callback: ?Function,
 ) {
-  if (__DEV__) {
-    if (
-      ReactCurrentFiberPhase === 'render' &&
-      ReactCurrentFiberCurrent !== null &&
-      !didWarnAboutNestedUpdates
-    ) {
-      didWarnAboutNestedUpdates = true;
-      warningWithoutStack(
-        false,
-        'Render methods should be a pure function of props and state; ' +
-          'triggering nested component updates from render is not allowed. ' +
-          'If necessary, trigger nested updates in componentDidUpdate.\n\n' +
-          'Check the render method of %s.',
-        getComponentName(ReactCurrentFiberCurrent.type) || 'Unknown',
-      );
-    }
-  }
-
+  // 根据到期时间创建一个更新
   const update = createUpdate(expirationTime);
   // Caution: React DevTools currently depends on this property
   // being called "element".
@@ -143,22 +136,23 @@ function scheduleRootUpdate(
 
   callback = callback === undefined ? null : callback;
   if (callback !== null) {
-    warningWithoutStack(
-      typeof callback === 'function',
-      'render(...): Expected the last optional `callback` argument to be a ' +
-        'function. Instead received: %s.',
-      callback,
-    );
+    // 将回调挂载在当前这个更新上
     update.callback = callback;
   }
 
+  // ？？？？？？
   flushPassiveEffects();
+  // 把创建的更新推入当前 Fiber 的更新链表中
   enqueueUpdate(current, update);
+  // 开始调度更新
   scheduleWork(current, expirationTime);
 
   return expirationTime;
 }
 
+/**
+ * 根据到期时间更新容器（dom）
+ */
 export function updateContainerAtExpirationTime(
   element: ReactNodeList,
   container: OpaqueRoot,
@@ -167,27 +161,16 @@ export function updateContainerAtExpirationTime(
   callback: ?Function,
 ) {
   // TODO: If this is a nested container, this won't be the root.
+  // 当前 FiberRoot 对象的 RootFiber 对象
   const current = container.current;
-
-  if (__DEV__) {
-    if (ReactFiberInstrumentation.debugTool) {
-      if (current.alternate === null) {
-        ReactFiberInstrumentation.debugTool.onMountContainer(container);
-      } else if (element === null) {
-        ReactFiberInstrumentation.debugTool.onUnmountContainer(container);
-      } else {
-        ReactFiberInstrumentation.debugTool.onUpdateContainer(container);
-      }
-    }
-  }
-
+  // 根据父组件获取当前子树的 context 对象
   const context = getContextForSubtree(parentComponent);
   if (container.context === null) {
     container.context = context;
   } else {
     container.pendingContext = context;
   }
-
+  // 开始调度 RootFiber 对象的更新
   return scheduleRootUpdate(current, element, expirationTime, callback);
 }
 
@@ -277,18 +260,26 @@ export function createContainer(
   isConcurrent: boolean,
   hydrate: boolean,
 ): OpaqueRoot {
+  // 创建 FiberRoot 对象
   return createFiberRoot(containerInfo, isConcurrent, hydrate);
 }
 
+/**
+ * 更新容器（dom）
+ */
 export function updateContainer(
   element: ReactNodeList,
   container: OpaqueRoot,
   parentComponent: ?React$Component<any, any>,
   callback: ?Function,
 ): ExpirationTime {
+  // current 是 Fiber 对象
   const current = container.current;
+  // 获取当前时间（这个时间是经过批量处理的时间）
   const currentTime = requestCurrentTime();
+  // 根据当前时间和更新的 Fiber 对象，计算到期时间
   const expirationTime = computeExpirationForFiber(currentTime, current);
+  // 根据计算出的到期时间更新容器（dom）
   return updateContainerAtExpirationTime(
     element,
     container,
